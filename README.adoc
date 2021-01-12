@@ -1,0 +1,233 @@
+= Migrate Thorntail Application to Bootable JAR on JBoss EAP XP 2.0
+
+
+== Running the Thorntail Application Locally
+
+To run this Thorntail application on your local host:
+
+[source,bash,options="nowrap",subs="attributes+"]
+----
+$ cd xp20-demo
+
+$ mvn thorntail:run
+----
+
+== Interacting with the Thorntail Application Locally
+
+To interact with your ThorntailThorntail application while it's running locally, use the form at `http://localhost:8080` or the `curl` command:
+
+[source,bash,options="nowrap",subs="attributes+"]
+----
+$ curl http://localhost:8080/api/greeting
+{"content":"Hello, World!"}
+
+$ curl http://localhost:8080/api/greeting?name=Thorntail
+{"content":"Hello, Thorntail!"}
+----
+
+
+== Migrating the Thorntail Application to Bootable Jar
+
+To update your Thorntail application:
+
+. Stop your Thorntail application.
++
+NOTE: To stop your running Thorntail application in a Linux or macOS terminal, use `CTRL+C`. In a Windows command prompt, you can use `CTRL + Break(pause)`.
+
+Open the generated `pom.xml`.
+
+The first thing to do is to change the version to `2.0.0.GA` along with the version of XP:
+
+[source,xml]
+----
+    <version>2.0.0.GA</version>
+----
+
+Add the following properties in `pom.xml`:
+
+[source,xml]
+----
+    <version.server.bom>7.3.4.GA</version.server.bom>
+    <version.microprofile.bom>2.0.0.GA</version.microprofile.bom>
+    <version.server.bootable-jar>2.0.0.GA-redhat-00002</version.server.bootable-jar>
+    <version.wildfly-jar.maven.plugin>2.0.2.Final-redhat-00001</version.wildfly-jar.maven.plugin>
+    <version.jkube.maven.plugin>1.0.1</version.jkube.maven.plugin>
+    <jkube.generator.from>registry.redhat.io/ubi8/openjdk-11:latest</jkube.generator.from>
+----
+
+Replace a new `BOM` of Jakarta EE8 and MicroProfile dependencies in `pom.xml`:
+
+[source,xml]
+----
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.jboss.bom</groupId>
+                <artifactId>jboss-eap-jakartaee8-with-tools</artifactId>
+                <version>${version.server.bom}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.jboss.bom</groupId>
+                <artifactId>jboss-eap-xp-microprofile</artifactId>
+                <version>${version.microprofile.bom}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+----
+
+Replace dependencies to provide CDI, JAX-RS and MicroProfile capabilities in `pom.xml`:
+
+[source,xml]
+----
+    <dependency>
+      <groupId>jakarta.enterprise</groupId>
+      <artifactId>jakarta.enterprise.cdi-api</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jboss.spec.javax.ws.rs</groupId>
+      <artifactId>jboss-jaxrs-api_2.1_spec</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.microprofile.health</groupId>
+      <artifactId>microprofile-health-api</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.microprofile.config</groupId>
+      <artifactId>microprofile-config-api</artifactId>
+      <scope>provided</scope>
+    </dependency> 
+----
+
+Replace profile and build configuration in `pom.xml`:
+
+[source,xml]
+----
+    <profiles>
+      <profile>
+          <id>bootable-jar</id>
+          <build>
+              <plugins>
+                  <plugin>
+                      <groupId>org.wildfly.plugins</groupId>
+                      <artifactId>wildfly-jar-maven-plugin</artifactId>
+                      <version>${version.wildfly-jar.maven.plugin}</version>
+                      <configuration>
+                          <feature-pack-location>org.jboss.eap:wildfly-galleon-pack:${version.server.bootable-jar}</feature-pack-location>
+                          <layers>
+                              <layer>jaxrs-server</layer>
+                              <layer>microprofile-platform</layer>
+                          </layers>
+                      </configuration>
+                      <executions>
+                          <execution>
+                              <goals>
+                                  <goal>package</goal>
+                              </goals>
+                          </execution>
+                      </executions>
+                  </plugin>
+              </plugins>
+          </build>
+      </profile>
+      <profile>
+          <id>bootable-jar-openshift</id>
+          <build>
+              <plugins>
+                  <plugin>
+                      <groupId>org.wildfly.plugins</groupId>
+                      <artifactId>wildfly-jar-maven-plugin</artifactId>
+                      <version>${version.wildfly-jar.maven.plugin}</version>
+                      <configuration>
+                          <feature-pack-location>org.jboss.eap:wildfly-galleon-pack:${version.server.bootable-jar}</feature-pack-location>
+                          <layers>
+                              <layer>jaxrs-server</layer>
+                              <layer>microprofile-platform</layer>
+                          </layers>
+                          <cloud/>
+                      </configuration>
+                      <executions>
+                          <execution>
+                              <goals>
+                                  <goal>package</goal>
+                              </goals>
+                          </execution>
+                      </executions>
+                  </plugin>
+                  <plugin>
+                      <groupId>org.eclipse.jkube</groupId>
+                      <artifactId>openshift-maven-plugin</artifactId>
+                      <version>${version.jkube.maven.plugin}</version>
+                      <executions>
+                          <execution>
+                              <goals>
+                                  <goal>resource</goal>
+                                  <goal>build</goal>
+                              </goals>
+                          </execution>
+                      </executions>
+                      <configuration>
+                          <enricher>
+                              <config>
+                                  <jkube-service>
+                                      <type>NodePort</type>
+                                  </jkube-service>
+                              </config>
+                          </enricher>
+                      </configuration>
+                  </plugin>
+              </plugins>
+          </build>
+      </profile>
+    </profiles>
+----
+
+== Running the Bootable JAR Application Locally
+
+To run this Bootable application on your local host:
+
+[source,bash,options="nowrap",subs="attributes+"]
+----
+$ mvn clean package -Pbootable-jar
+----
+
+Once the build is succeeded, run the bootable jar:
+
+[source,bash,options="nowrap",subs="attributes+"]
+----
+$ java -jar target/xp20-demo-2.0.0.GA-bootable.jar
+----
+
+== Interacting with the Bootable JAR Application Locally
+
+To interact with your Bootable application while it's running locally, use the form at `http://localhost:8080` or the `curl` command:
+
+[source,bash,options="nowrap",subs="attributes+"]
+----
+$ curl http://localhost:8080/api/greeting
+{"content":"Hello, World!"}
+
+$ curl http://localhost:8080/api/greeting?name=Bootable
+{"content":"Hello, Bootable!"}
+----
+
+== Running the Bootable JAR Application on OpenShift Cluster:
+
+To deploy your Bootable JAR application, be sure to login with your credential and create a new project in OpenShift cluster:
+
+[source,bash,options="nowrap",subs="attributes+"]
+----
+$ oc login -u USERNAME -p PASSWORD
+
+$ oc new-project xp2-demo
+
+$ mvn clean oc:deploy -Pbootable-jar-openshift
+----
+
+Go to `Developer console` then you should see that a pod is running. When you click on `Open URL` in Topology view, you will see the GUI to invoke the REST API.
